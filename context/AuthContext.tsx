@@ -60,24 +60,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [sessionLoading, setSessionLoading] = useState(true);
 
     useEffect(() => {
+        // This effect is the core of session management.
+        // It runs once when the app loads to check for an existing session.
+        // Supabase's `onAuthStateChange` listener fires immediately with the current
+        // session if the user was previously logged in, enabling auto-login.
         setSessionLoading(true);
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             setSession(session);
             if (session?.user) {
                 const userProfile = await fetchUserProfile(session.user);
-                // The login function now handles the lock check, but this is a good safeguard
-                if (userProfile?.is_locked) {
-                    setUser(null);
-                    supabase.auth.signOut();
-                } else {
+                // A user is considered logged in only if they have a session AND a valid, non-locked profile.
+                if (userProfile && !userProfile.is_locked) {
                     setUser(userProfile);
+                } else {
+                    // If no profile is found or the account is locked, clear the user state
+                    // and force a sign-out to prevent being in an inconsistent state.
+                    setUser(null);
+                    await supabase.auth.signOut();
                 }
             } else {
+                // If there is no session, ensure the user state is cleared.
                 setUser(null);
             }
             setSessionLoading(false);
         });
 
+        // Unsubscribe from the listener when the component unmounts.
         return () => subscription.unsubscribe();
     }, []);
 
@@ -91,7 +99,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 return { error: { message: "Invalid email or password. Please try again or register for a new account." } };
             }
             return { error: signInError };
-        }
+        } 
         if (!data.user) {
              return { error: { message: "Login failed, please try again." } };
         }
