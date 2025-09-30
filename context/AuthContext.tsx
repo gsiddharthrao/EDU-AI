@@ -82,27 +82,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, []);
 
     const login = async (email: string, password: string) => {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) return { error };
-        
-        // Post-authentication check for lock status
-        if (data.user) {
-            const { data: profileData, error: profileError } = await supabase
-                .from('profiles')
-                .select('is_locked')
-                .eq('id', data.user.id)
-                .single();
+        // Step 1: Sign in the user
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
-            if (profileError && profileError.code !== 'PGRST116') {
-                return { error: profileError };
-            }
-
-            if (profileData?.is_locked) {
-                await supabase.auth.signOut();
-                return { error: { message: "This account has been locked by an administrator." } };
-            }
+        if (signInError) {
+            return { error: signInError };
         }
-        // If not locked, onAuthStateChange will handle setting the user state.
+        if (!data.user) {
+             return { error: { message: "Login failed, please try again." } };
+        }
+
+        // Step 2: Immediately try to fetch the user's profile to ensure it's accessible.
+        // This is a critical check for RLS policies.
+        const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .single();
+
+        // Step 3: If profile is not found or there's an error, something is wrong.
+        // This could be an RLS issue or a missing profile. Sign out and show an error.
+        if (profileError) {
+            await supabase.auth.signOut(); // Important: don't leave the user in a half-logged-in state.
+            console.error('Error fetching profile after login:', profileError);
+            return { error: { message: "Login successful, but could not retrieve your profile. Please ensure database security policies are active or contact support." } };
+        }
+
+        // Step 4: Check if the fetched profile shows the account is locked.
+        if (profileData.is_locked) {
+            await supabase.auth.signOut();
+            return { error: { message: "This account has been locked by an administrator." } };
+        }
+
+        // Step 5: Success. onAuthStateChange will now handle setting the user state.
         return { error: null };
     };
 
