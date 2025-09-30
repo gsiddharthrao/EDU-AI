@@ -95,7 +95,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         const { data, error } = await supabase
             .from('profiles')
-            .select('id, name, points, badges')
+            .select('id, name, email, points, badges')
             .order('points', { ascending: false })
             .limit(10);
 
@@ -106,13 +106,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
 
         if (data) {
-            const leaderboardData: LeaderboardEntry[] = data.map((profile, index) => ({
-                id: profile.id,
-                rank: index + 1,
-                name: profile.name,
-                points: profile.points,
-                badges: profile.badges || [],
-            }));
+            const leaderboardData: LeaderboardEntry[] = data.map((profile, index) => {
+                let displayName = profile.name;
+                // If the name is missing, create a fallback from the email.
+                if (!displayName && profile.email) {
+                    displayName = profile.email.split('@')[0];
+                }
+
+                return {
+                    id: profile.id,
+                    rank: index + 1,
+                    name: displayName || 'Anonymous', // Final fallback
+                    points: profile.points,
+                    badges: profile.badges || [],
+                };
+            });
             setLeaderboard(leaderboardData);
         }
     }, []);

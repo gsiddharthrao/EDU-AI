@@ -14,11 +14,9 @@ const fetchUserProfile = async (sessionUser: SupabaseUser): Promise<User | null>
             .single();
 
         if (error) {
-            if (error.code !== 'PGRST116') { // Ignore 'exact one row not found'
-                console.error('Auth: Supabase error fetching user profile:', { code: error.code, message: error.message, details: error.details });
-            } else {
-                console.warn("Auth: Profile not found for user:", sessionUser.id, "(This is expected if the profile hasn't been created or RLS is blocking).");
-            }
+            // Any error here is critical, as a session exists but the profile is inaccessible.
+            // This is the most common point of failure due to missing RLS policies.
+            console.error('Auth: Supabase error fetching user profile. This is likely due to missing RLS policies.', { code: error.code, message: error.message });
             return null;
         }
 
@@ -67,30 +65,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setSessionLoading(true);
         console.log("Auth: Setting up auth state change listener.");
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            console.log(`Auth: Auth state change detected. Event: ${_event}`);
+            console.log(`Auth: Auth state change detected. Event: ${_event}, Session:`, session ? 'Exists' : 'null');
             try {
-                setSession(session);
                 if (session?.user) {
                     const userProfile = await fetchUserProfile(session.user);
                     if (userProfile && !userProfile.is_locked) {
                         setUser(userProfile);
+                        setSession(session);
                         console.log("Auth: User session restored and profile loaded successfully.");
                     } else {
-                         if (!userProfile) {
-                            console.error("Auth: Session exists, but user profile could not be fetched. This could be due to RLS policies or a missing profile. Forcing sign out.");
-                        }
+                        // This block handles cases where the session is valid but the profile is not.
                         if (userProfile?.is_locked) {
                             console.warn("Auth: User account is locked. Forcing sign out.");
+                        } else {
+                            console.error("Auth: Session exists, but user profile could not be fetched or is invalid. Forcing sign out. This is often caused by missing RLS policies on the 'profiles' table.");
                         }
                         setUser(null);
+                        setSession(session); // Keep session info for context if needed, but user is null
                         await supabase.auth.signOut();
                     }
                 } else {
+                    // This handles logout or expired sessions.
                     setUser(null);
+                    setSession(null);
                 }
             } catch (e) {
                 console.error("Auth: A critical error occurred in onAuthStateChange. This is unexpected.", e);
                 setUser(null); 
+                setSession(null);
             } finally {
                 // This block is guaranteed to run, ensuring the app is never stuck in a loading state.
                 setSessionLoading(false);
@@ -108,7 +110,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
         if (signInError) {
-             // Add specific handling for email not confirmed
+            console.error("Auth: Login failed at signInWithPassword.", signInError.message);
             if (signInError.message.toLowerCase().includes('email not confirmed')) {
                 return { error: { message: "Please check your inbox and confirm your email address before logging in." } };
             }
@@ -117,27 +119,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
             return { error: signInError };
         } 
+        
         if (!data.user) {
              return { error: { message: "Login failed, please try again." } };
         }
+        
+        // After successful sign-in, immediately try to fetch the profile to ensure it's accessible.
+        const userProfile = await fetchUserProfile(data.user);
 
-        const { data: profileData, error: profileError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', data.user.id)
-            .single();
-
-        if (profileError) {
-            await supabase.auth.signOut();
-            console.error('Error fetching profile after login:', profileError);
-            return { error: { message: "Login successful, but could not retrieve your profile. Please ensure database security policies are active or contact support." } };
+        if (!userProfile) {
+            await supabase.auth.signOut(); // Log the user out to prevent an inconsistent state.
+            console.error('Auth: Login successful, but could not retrieve user profile. Forcing logout.');
+            return { error: { message: "Login successful, but we couldn't load your profile. Please contact support. (This may be due to database security policies)." } };
         }
 
-        if (profileData.is_locked) {
+        if (userProfile.is_locked) {
             await supabase.auth.signOut();
             return { error: { message: "This account has been locked by an administrator." } };
         }
 
+        // Success! The onAuthStateChange listener will handle setting the user state.
         return { error: null };
     };
 
@@ -151,7 +152,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 }
             }
         });
-        return { error };
+        // The error object might contain a user object even if an error occurs (e.g., email already exists but is unconfirmed).
+        // Check for error first.
+        if (error) {
+            return { error };
+        }
+        // Check if a user was created but needs confirmation.
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+            return { error: { message: "This email address is already in use. Please try logging in." } };
+        }
+
+        return { error: null };
     };
 
     const logout = async () => {

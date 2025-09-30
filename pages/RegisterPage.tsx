@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const AlertTriangle: React.FC<{ className?: string }> = ({ className }) => (
@@ -11,7 +11,6 @@ const CheckCircle: React.FC<{ className?: string }> = ({ className }) => (
 
 const RegisterPage: React.FC = () => {
   const { register, sessionLoading } = useAuth();
-  const navigate = useNavigate();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,11 +40,9 @@ const RegisterPage: React.FC = () => {
         if (authError) {
           setError(authError.message);
         } else {
-          // Set success message and redirect to login page
-          setSuccessMessage("Registration successful! Redirecting to login...");
-          setTimeout(() => {
-            navigate('/login');
-          }, 2000); // 2-second delay for user to see the message
+          // Set a clear success message for the user.
+          setSuccessMessage("Success! Please check your email for a confirmation link to activate your account.");
+          // Don't navigate away, let the user see the message.
         }
     } catch (e: any) {
         setError(e.message || "An unexpected error occurred.");
@@ -59,6 +56,21 @@ const RegisterPage: React.FC = () => {
         <h2 className="text-3xl font-bold text-center text-neutral-light dark:text-white">
           Create an Account
         </h2>
+        
+        {successMessage ? (
+            <div className="text-center">
+                 <div className="flex items-center space-x-2 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-600 text-green-700 dark:text-green-300 px-4 py-3 rounded-lg" role="alert">
+                    <CheckCircle className="w-5 h-5 flex-shrink-0" />
+                    <span className="text-sm">{successMessage}</span>
+                </div>
+                <p className="mt-4 text-sm">
+                    Already confirmed?{' '}
+                    <Link to="/login" className="font-medium text-primary hover:underline">
+                        Click here to login.
+                    </Link>
+                </p>
+            </div>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="fullname" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
@@ -111,16 +123,10 @@ const RegisterPage: React.FC = () => {
                 <span className="text-sm">{error}</span>
             </div>
            )}
-          {successMessage && (
-            <div className="flex items-center space-x-2 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-600 text-green-700 dark:text-green-300 px-4 py-3 rounded-lg" role="alert">
-                <CheckCircle className="w-5 h-5 flex-shrink-0" />
-                <span className="text-sm">{successMessage}</span>
-            </div>
-          )}
           
           <button
             type="submit"
-            disabled={isSubmitting || sessionLoading || !!successMessage}
+            disabled={isSubmitting || sessionLoading}
             className="w-full flex justify-center px-4 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
           >
              {isSubmitting ? (
@@ -130,13 +136,14 @@ const RegisterPage: React.FC = () => {
                 </svg>
              ) : 'Register'}
           </button>
-        </form>
-         <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-center text-sm text-gray-600 dark:text-gray-400">
             Already have an account?{' '}
             <Link to="/login" className="font-medium text-primary hover:underline">
                 Login here
             </Link>
-        </p>
+          </p>
+        </form>
+        )}
       </div>
     </div>
   );
