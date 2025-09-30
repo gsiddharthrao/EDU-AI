@@ -14,6 +14,7 @@ import AboutPage from './pages/AboutPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import TermsOfServicePage from './pages/TermsOfServicePage';
 import BadgeNotification from './components/BadgeNotification';
+import SessionInvalidator from './components/SessionInvalidator';
 
 interface ProtectedRouteProps {
     children: React.ReactElement;
@@ -30,6 +31,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 };
 
 const AppContent: React.FC = () => {
+    const { isSessionInvalid } = useAuth();
+
     return (
         <>
             <div className="flex flex-col min-h-screen bg-background-light dark:bg-background-dark text-content-light dark:text-content-dark transition-colors duration-300">
@@ -56,6 +59,7 @@ const AppContent: React.FC = () => {
                 <Footer />
             </div>
             {/* Overlays are placed here to ensure they are not trapped in a lower stacking context */}
+            {isSessionInvalid && <SessionInvalidator />}
             <GlobalAssistant />
             <BadgeNotification />
         </>

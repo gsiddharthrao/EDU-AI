@@ -47,6 +47,7 @@ interface AuthContextType {
     session: Session | null;
     sessionLoading: boolean;
     authError: string | null;
+    isSessionInvalid: boolean;
     login: (email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     register: (name: string, email: string, password: string) => Promise<{ success: boolean }>;
@@ -61,44 +62,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [session, setSession] = useState<Session | null>(null);
     const [sessionLoading, setSessionLoading] = useState(true);
     const [authError, setAuthError] = useState<string | null>(null);
+    const [isSessionInvalid, setIsSessionInvalid] = useState(false);
 
     const clearAuthError = () => setAuthError(null);
 
     useEffect(() => {
         setSessionLoading(true);
-
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            let userProfile = null;
             if (session?.user) {
                 const profile = await fetchUserProfile(session.user);
                 
                 if (profile) {
+                    // This is a valid session with a valid profile.
+                    setIsSessionInvalid(false);
+                    setAuthError(null);
+
                     if (profile.is_locked) {
                         setAuthError("Your account has been locked. Please contact an administrator.");
-                        await supabase.auth.signOut(); // Force logout
+                        await supabase.auth.signOut(); // This will re-trigger onAuthStateChange with a null session
                     } else {
-                        userProfile = profile;
-                        setAuthError(null); // Clear any previous errors on successful login
+                        setUser(profile);
+                        setSession(session);
                     }
                 } else {
-                    // This is a critical failure case where the user is authenticated but has no profile.
-                    // This can happen if a user's session token is stale from before a database change.
-                    // We must log them out forcefully and redirect to ensure a clean state.
-                    console.error("Auth: User has a valid session but no profile. Forcing logout and redirecting.");
-                    setAuthError("Your session is invalid. Please log in again.");
-                    await supabase.auth.signOut();
-                    // A hard redirect is the most robust way to clear all stale state.
-                    // We use /#/login because of HashRouter.
-                    window.location.href = '/#/login';
-                    return; // Stop further execution in this callback.
+                    // CRITICAL: Authenticated user with no profile. This is an invalid state.
+                    console.error("Auth: User has a valid session but no profile. Triggering session invalidation flow.");
+                    setIsSessionInvalid(true);
+                    // Clear local state immediately
+                    setUser(null);
+                    setSession(null);
                 }
             } else {
-                // If there's no session, clear user data and any potential errors.
+                // No session, user is logged out. This is a valid, clean state.
+                setIsSessionInvalid(false);
+                setUser(null);
+                setSession(session); // session is null here
                 setAuthError(null);
             }
-            
-            setUser(userProfile);
-            setSession(session);
             setSessionLoading(false);
         });
 
@@ -176,6 +176,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         session,
         sessionLoading,
         authError,
+        isSessionInvalid,
         login,
         register,
         logout,
