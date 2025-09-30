@@ -16,6 +16,8 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ initialProfile, onSave, onCan
         const updatedSkills = skillsInput.split(',').map(s => s.trim()).filter(s => s);
         onSave({ ...profile, skills: updatedSkills });
     };
+    
+    const isFirstTimeSetup = onCancel.toString() === '() => {}';
 
     return (
         <form onSubmit={handleSave} className="bg-white dark:bg-neutral-light/20 p-6 rounded-lg shadow-md mt-4 space-y-4 animate-fade-in">
@@ -24,9 +26,11 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ initialProfile, onSave, onCan
                 <input
                     type="text"
                     id="aspirations"
+                    placeholder="e.g., Full Stack Web Developer"
                     value={profile.career_aspirations}
                     onChange={(e) => setProfile({ ...profile, career_aspirations: e.target.value })}
                     className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+                    required
                 />
             </div>
              <div>
@@ -34,17 +38,21 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ initialProfile, onSave, onCan
                 <input
                     type="text"
                     id="skills"
+                    placeholder="e.g., HTML, CSS, Basic JavaScript"
                     value={skillsInput}
                     onChange={(e) => setSkillsInput(e.target.value)}
                     className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+                    required
                 />
             </div>
             <div className="flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500 transition-colors">
-                    Cancel
-                </button>
+                {!isFirstTimeSetup && (
+                    <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500 transition-colors">
+                        Cancel
+                    </button>
+                )}
                 <button type="submit" className="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors">
-                    Save & Regenerate Path
+                    {isFirstTimeSetup ? 'Create My Learning Path' : 'Save & Update Path'}
                 </button>
             </div>
         </form>

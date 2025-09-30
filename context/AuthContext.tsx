@@ -107,26 +107,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     const register = async (name: string, email: string, password: string) => {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (!error && data.user) {
-            const { error: profileError } = await supabase.from('profiles').insert({
-                id: data.user.id,
-                name,
-                email,
-                role: 'student',
-                points: 0,
-                badges: [],
-                completed_lessons: [],
-                skills: [],
-                career_aspirations: '',
-                is_locked: false,
-            });
-
-            if (profileError) {
-                console.error('Error creating user profile:', profileError);
-                return { error: profileError };
+        // We only call signUp. The database trigger will handle profile creation.
+        // We pass the user's full name in the `data` field so the trigger can use it.
+        const { data, error } = await supabase.auth.signUp({ 
+            email, 
+            password,
+            options: {
+                data: {
+                    name: name,
+                }
             }
-        }
+        });
+
+        // The profile creation logic is now removed from here.
+        // If there's an error during signUp, we just return it.
         return { error };
     };
 

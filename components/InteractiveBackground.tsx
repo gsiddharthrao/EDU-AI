@@ -26,8 +26,8 @@ const InteractiveBackground: React.FC = () => {
 
     const particleColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)';
     const lineColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)';
-    const PARTICLE_COUNT = 80;
-    const CONNECT_DISTANCE = 120;
+    const PARTICLE_COUNT = 40; // Reduced from 80 for better performance
+    const CONNECT_DISTANCE = 140; // Increased slightly to compensate for fewer particles
 
     const setup = () => {
       canvas.width = window.innerWidth;

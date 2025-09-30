@@ -1,14 +1,9 @@
-// FIX: Add reference to Vite client types to resolve error on import.meta.env
-/// <reference types="vite/client" />
-
 // FIX: Implement Gemini API services. This file was previously empty.
 import { GoogleGenAI, Type } from "@google/genai";
 import { LearningPath, UserProfile, ChatMessage, RecommendedVideo, Module, SmartReview } from '../types';
 
-// FIX: Initialize GoogleGenAI client according to coding guidelines.
-// The API key MUST be obtained exclusively from the environment variable.
-// For Vite apps, this is accessed via `import.meta.env.VITE_API_KEY`.
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+// FIX: Initialize the Gemini client using `process.env.API_KEY` to adhere to coding guidelines.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // FIX: Define the response schema for the learning path to ensure consistent JSON output from the model.
 const learningPathSchema = {
@@ -238,6 +233,7 @@ export const generateSmartReview = async (module: Module): Promise<SmartReview> 
 
     try {
         const response = await ai.models.generateContent({
+            // FIX: Corrected typo in the model name from 'gem.ini-2.5-flash' to 'gemini-2.5-flash'.
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: {

@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 import { User, LearningPath, UserProfile, LeaderboardEntry, ChatMessage, Badge } from '../types';
 import { generateLearningPath as apiGenerateLearningPath, streamChatbotResponse as apiStreamChatbotResponse } from '../services/geminiService';
 import { Language, translations } from '../translations';
-import { AVAILABLE_BADGES } from '../constants';
+import { AVAILABLE_BADGES, MOCK_LEADERBOARD } from '../constants';
 import { generateProfileHash } from '../lib/crypto';
 import { useAuth } from './AuthContext';
 
@@ -23,6 +23,8 @@ interface AppContextType {
     translate: (key: string) => string;
     notification: Badge | null;
     hideNotification: () => void;
+    isAnimationEnabled: boolean;
+    toggleAnimation: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -36,6 +38,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
     const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'en');
     const [notification, setNotification] = useState<Badge | null>(null);
+    const [isAnimationEnabled, setIsAnimationEnabled] = useState(() => {
+        const saved = localStorage.getItem('animationEnabled');
+        return saved !== null ? JSON.parse(saved) : true;
+    });
     const notificationTimerRef = useRef<number | null>(null);
     
     const hideNotification = useCallback(() => {
@@ -61,8 +67,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
         localStorage.setItem('theme', theme);
     }, [theme]);
+    
+    useEffect(() => {
+        localStorage.setItem('animationEnabled', JSON.stringify(isAnimationEnabled));
+    }, [isAnimationEnabled]);
 
     const toggleTheme = () => setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+    
+    const toggleAnimation = () => setIsAnimationEnabled(prev => !prev);
     
     const handleSetLanguage = (lang: Language) => {
         setLanguage(lang);
@@ -74,6 +86,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, [language]);
 
     const fetchLeaderboard = useCallback(async () => {
+        // FIX: Check if Supabase client is initialized with placeholder keys. If so, use mock data.
+        const isPlaceholder = supabase.auth.getSession === undefined || !process.env.VITE_SUPABASE_URL;
+        if (isPlaceholder) {
+            setLeaderboard(MOCK_LEADERBOARD);
+            return;
+        }
+
         const { data, error } = await supabase
             .from('profiles')
             .select('id, name, points, badges')
@@ -82,6 +101,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (error) {
             console.error('Error fetching leaderboard:', error);
+            setLeaderboard(MOCK_LEADERBOARD); // Fallback to mock data on error
             return;
         }
 
@@ -253,6 +273,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         theme, toggleTheme,
         language, setLanguage: handleSetLanguage, translate,
         notification, hideNotification,
+        isAnimationEnabled, toggleAnimation,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

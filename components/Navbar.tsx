@@ -16,9 +16,18 @@ const Globe: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
 );
 
+const Zap: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+);
+
+const ZapOff: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m13.2 2-10 12h9l-1.2 8 10-12h-9z"></path><path d="m2 2 20 20"></path></svg>
+);
+
+
 const Navbar: React.FC = () => {
     const { user, logout } = useAuth();
-    const { theme, toggleTheme, language, setLanguage } = useAppContext();
+    const { theme, toggleTheme, language, setLanguage, isAnimationEnabled, toggleAnimation } = useAppContext();
     const navigate = useNavigate();
 
     const handleLogout = async () => {
@@ -59,13 +68,14 @@ const Navbar: React.FC = () => {
                         })}
                     </div>
 
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2 sm:space-x-4">
                         <div className="relative">
                            <Globe className="absolute left-2 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 pointer-events-none" />
                             <select 
                                 value={language} 
                                 onChange={handleLanguageChange}
                                 className="pl-8 pr-2 py-1.5 bg-gray-100 dark:bg-neutral-light/20 border border-transparent rounded-md focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
+                                aria-label="Select language"
                             >
                                 <option value="en">EN</option>
                                 <option value="hi">HI</option>
@@ -73,7 +83,11 @@ const Navbar: React.FC = () => {
                             </select>
                         </div>
 
-                        <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-neutral-light/20 transition-colors">
+                        <button onClick={toggleAnimation} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-neutral-light/20 transition-colors" aria-label={isAnimationEnabled ? 'Disable background animation' : 'Enable background animation'}>
+                            {isAnimationEnabled ? <Zap className="w-6 h-6" /> : <ZapOff className="w-6 h-6 text-red-500" />}
+                        </button>
+
+                        <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-neutral-light/20 transition-colors" aria-label="Toggle dark mode">
                             {theme === 'light' ? <Moon className="w-6 h-6" /> : <Sun className="w-6 h-6" />}
                         </button>
 
