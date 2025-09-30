@@ -14,8 +14,6 @@ const fetchUserProfile = async (sessionUser: SupabaseUser): Promise<User | null>
             .single();
 
         if (error) {
-            // Any error here is critical, as a session exists but the profile is inaccessible.
-            // This is the most common point of failure due to missing RLS policies.
             console.error('Auth: Supabase error fetching user profile. This is likely due to missing RLS policies.', { code: error.code, message: error.message });
             return null;
         }
@@ -62,41 +60,56 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [sessionLoading, setSessionLoading] = useState(true);
 
     useEffect(() => {
-        setSessionLoading(true);
-        console.log("Auth: Setting up auth state change listener.");
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            console.log(`Auth: Auth state change detected. Event: ${_event}, Session:`, session ? 'Exists' : 'null');
+        // This function proactively checks the session on initial app load.
+        // It's more reliable than just waiting for onAuthStateChange to fire.
+        const checkInitialSession = async () => {
+            console.log("Auth: Starting initial session check...");
             try {
-                if (session?.user) {
-                    const userProfile = await fetchUserProfile(session.user);
+                const { data: { session: initialSession } } = await supabase.auth.getSession();
+                if (initialSession?.user) {
+                    console.log("Auth: Initial session found. Fetching profile.");
+                    const userProfile = await fetchUserProfile(initialSession.user);
                     if (userProfile && !userProfile.is_locked) {
                         setUser(userProfile);
-                        setSession(session);
-                        console.log("Auth: User session restored and profile loaded successfully.");
+                        setSession(initialSession);
+                        console.log("Auth: Initial session and profile loaded successfully.");
                     } else {
-                        // This block handles cases where the session is valid but the profile is not.
-                        if (userProfile?.is_locked) {
-                            console.warn("Auth: User account is locked. Forcing sign out.");
-                        } else {
-                            console.error("Auth: Session exists, but user profile could not be fetched or is invalid. Forcing sign out. This is often caused by missing RLS policies on the 'profiles' table.");
-                        }
-                        setUser(null);
-                        setSession(session); // Keep session info for context if needed, but user is null
-                        await supabase.auth.signOut();
+                        // Profile fetch failed or user is locked, ensure they are logged out.
+                         await supabase.auth.signOut();
+                         setUser(null);
+                         setSession(null);
                     }
                 } else {
-                    // This handles logout or expired sessions.
-                    setUser(null);
-                    setSession(null);
+                    console.log("Auth: No initial session found.");
                 }
             } catch (e) {
-                console.error("Auth: A critical error occurred in onAuthStateChange. This is unexpected.", e);
-                setUser(null); 
-                setSession(null);
+                console.error("Auth: Error during initial session check.", e);
             } finally {
-                // This block is guaranteed to run, ensuring the app is never stuck in a loading state.
+                // This GUARANTEES the loading screen is removed.
                 setSessionLoading(false);
-                console.log("Auth: Session loading finished.");
+                console.log("Auth: Initial session check complete. Loading finished.");
+            }
+        };
+
+        checkInitialSession();
+
+        // This listener handles subsequent auth changes (login, logout) after the initial load.
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+             console.log(`Auth: Auth state change detected. Event: ${_event}`);
+            if (newSession?.user) {
+                if (newSession.user.id !== user?.id) { // Only refetch if the user is different
+                    const userProfile = await fetchUserProfile(newSession.user);
+                     if (userProfile && !userProfile.is_locked) {
+                        setUser(userProfile);
+                        setSession(newSession);
+                    } else {
+                        setUser(null);
+                        setSession(null);
+                    }
+                }
+            } else {
+                setUser(null);
+                setSession(null);
             }
         });
 
@@ -139,6 +152,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
 
         // Success! The onAuthStateChange listener will handle setting the user state.
+        setUser(userProfile);
+        setSession(data.session);
         return { error: null };
     };
 
@@ -152,12 +167,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 }
             }
         });
-        // The error object might contain a user object even if an error occurs (e.g., email already exists but is unconfirmed).
-        // Check for error first.
         if (error) {
+            // Check for a specific error indicating the user exists but is unconfirmed.
+             if (error.message.includes("User already registered")) {
+                return { error: { message: "This email is already registered. If you haven't confirmed your email, please check your inbox." } };
+            }
             return { error };
         }
-        // Check if a user was created but needs confirmation.
         if (data.user && data.user.identities && data.user.identities.length === 0) {
             return { error: { message: "This email address is already in use. Please try logging in." } };
         }
@@ -167,6 +183,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const logout = async () => {
         await supabase.auth.signOut();
+        setUser(null);
+        setSession(null);
     };
     
     const value = {
