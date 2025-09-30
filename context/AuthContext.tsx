@@ -86,6 +86,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
         if (signInError) {
+            // FIX: Provide a more user-friendly error message for invalid credentials.
+            if (signInError.message === 'Invalid login credentials') {
+                return { error: { message: "Invalid email or password. Please try again or register for a new account." } };
+            }
             return { error: signInError };
         }
         if (!data.user) {
