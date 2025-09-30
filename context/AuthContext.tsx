@@ -81,9 +81,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                         setAuthError(null); // Clear any previous errors on successful login
                     }
                 } else {
-                    // This is a critical failure case, likely due to RLS policies
-                    setAuthError("Login successful, but we couldn't access your profile. Please contact support. (Hint: Check RLS policies on the 'profiles' table).");
-                    await supabase.auth.signOut(); // Force logout
+                    // This is a critical failure case where the user is authenticated but has no profile.
+                    // This can happen if a user's session token is stale from before a database change.
+                    // We must log them out forcefully and redirect to ensure a clean state.
+                    console.error("Auth: User has a valid session but no profile. Forcing logout and redirecting.");
+                    setAuthError("Your session is invalid. Please log in again.");
+                    await supabase.auth.signOut();
+                    // A hard redirect is the most robust way to clear all stale state.
+                    // We use /#/login because of HashRouter.
+                    window.location.href = '/#/login';
+                    return; // Stop further execution in this callback.
                 }
             } else {
                 // If there's no session, clear user data and any potential errors.
