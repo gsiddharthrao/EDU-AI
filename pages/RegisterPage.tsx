@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,18 +10,25 @@ const CheckCircle: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 const RegisterPage: React.FC = () => {
-  const { register, sessionLoading } = useAuth();
+  const { register, sessionLoading, authError, clearAuthError } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(''); // Local form error
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    // Clear any previous authentication errors when the component mounts.
+    clearAuthError();
+  }, [clearAuthError]);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    clearAuthError();
     setSuccessMessage('');
 
     if (password !== confirmPassword) {
@@ -34,20 +41,15 @@ const RegisterPage: React.FC = () => {
     }
     
     setIsSubmitting(true);
-    try {
-        const { error: authError } = await register(name, email, password);
-
-        if (authError) {
-          setError(authError.message);
-        } else {
-          setSuccessMessage("Success! Please check your email for a confirmation link to activate your account.");
-        }
-    } catch (e: any) {
-        setError(e.message || "An unexpected error occurred.");
-    } finally {
-        setIsSubmitting(false);
+    const { success } = await register(name, email, password);
+    if (success) {
+      setSuccessMessage("Success! Please check your email for a confirmation link to activate your account.");
     }
+    // If not successful, the `authError` state in the context will be set and displayed.
+    setIsSubmitting(false);
   };
+  
+  const displayError = authError || error;
 
   return (
     <div className="flex items-center justify-center py-12 animate-fade-in">
@@ -116,10 +118,10 @@ const RegisterPage: React.FC = () => {
             />
           </div>
 
-          {error && (
+          {displayError && (
             <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg" role="alert">
                 <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-                <span className="text-sm">{error}</span>
+                <span className="text-sm">{displayError}</span>
             </div>
            )}
           
@@ -128,7 +130,7 @@ const RegisterPage: React.FC = () => {
             disabled={isSubmitting || sessionLoading}
             className="w-full flex justify-center px-4 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
           >
-             {isSubmitting ? (
+             {isSubmitting || sessionLoading ? (
                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>

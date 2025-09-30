@@ -139,6 +139,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, []);
 
     const generateLearningPath = useCallback(async (profile: UserProfile) => {
+        if (!user) {
+            setPathError("User not found. Cannot fetch learning path.");
+            setIsPathLoading(false);
+            return;
+        }
+
         setIsPathLoading(true);
         setLearningPath(null);
         setPathError(null);
@@ -148,6 +154,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const { data: cachedData, error: cacheError } = await supabase
                 .from('cached_learning_paths')
                 .select('path_data')
+                .eq('user_id', user.id) // Securely query by user_id
                 .eq('profile_hash', profileHash)
                 .single();
 
@@ -164,7 +171,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
                 const { error: insertError } = await supabase
                     .from('cached_learning_paths')
-                    .insert({ profile_hash: profileHash, path_data: path });
+                    .insert({ 
+                        profile_hash: profileHash, 
+                        path_data: path,
+                        user_id: user.id // Securely insert with user_id
+                    });
 
                 if (insertError) {
                     console.error('Error saving new path to cache:', insertError);
@@ -179,7 +190,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         } finally {
             setIsPathLoading(false);
         }
-    }, []);
+    }, [user]); // Add user to dependency array
 
     useEffect(() => {
         fetchLeaderboard();

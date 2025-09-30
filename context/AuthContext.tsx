@@ -46,10 +46,12 @@ interface AuthContextType {
     user: User | null;
     session: Session | null;
     sessionLoading: boolean;
-    login: (email: string, password: string) => Promise<{ error: any }>;
+    authError: string | null;
+    login: (email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
-    register: (name: string, email: string, password: string) => Promise<{ error: any }>;
+    register: (name: string, email: string, password: string) => Promise<{ success: boolean }>;
     setUser: React.Dispatch<React.SetStateAction<User | null>>;
+    clearAuthError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -58,109 +60,107 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
     const [sessionLoading, setSessionLoading] = useState(true);
+    const [authError, setAuthError] = useState<string | null>(null);
+
+    const clearAuthError = () => setAuthError(null);
 
     useEffect(() => {
-        // This simplified effect permanently fixes the session loading issue.
-        // It relies solely on `onAuthStateChange`, which is the canonical way
-        // to manage session state with Supabase.
-
-        // Set loading to true initially to prevent UI flicker or premature access.
         setSessionLoading(true);
 
-        // Listen for authentication state changes.
-        // The callback fires once immediately with the initial session state,
-        // and then again whenever the auth state changes (e.g., login, logout).
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             let userProfile = null;
             if (session?.user) {
-                // If there's a session, try to fetch the corresponding user profile.
                 const profile = await fetchUserProfile(session.user);
                 
-                // We only grant access if the profile exists and the account is not locked.
-                if (profile && !profile.is_locked) {
-                    userProfile = profile;
+                if (profile) {
+                    if (profile.is_locked) {
+                        setAuthError("Your account has been locked. Please contact an administrator.");
+                        await supabase.auth.signOut(); // Force logout
+                    } else {
+                        userProfile = profile;
+                        setAuthError(null); // Clear any previous errors on successful login
+                    }
+                } else {
+                    // This is a critical failure case, likely due to RLS policies
+                    setAuthError("Login successful, but we couldn't access your profile. Please contact support. (Hint: Check RLS policies on the 'profiles' table).");
+                    await supabase.auth.signOut(); // Force logout
                 }
+            } else {
+                // If there's no session, clear user data and any potential errors.
+                setAuthError(null);
             }
             
-            // Update the user and session state.
             setUser(userProfile);
             setSession(session);
-            
-            // CRITICAL: The session has now been checked. We set loading to false
-            // to unlock the UI, enabling buttons and allowing navigation to protected routes.
             setSessionLoading(false);
         });
 
-        // Cleanup: Unsubscribe from the listener when the component unmounts.
         return () => {
             subscription.unsubscribe();
         };
     }, []);
 
-    const login = async (email: string, password: string) => {
+    const login = async (email: string, password: string): Promise<void> => {
+        clearAuthError();
         try {
             const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
             if (signInError) {
-                console.error("Auth: Login failed at signInWithPassword.", signInError.message);
+                console.error("Auth: Login failed.", signInError.message);
                 if (signInError.message.toLowerCase().includes('email not confirmed')) {
-                    return { error: { message: "Please check your inbox and confirm your email address before logging in." } };
+                    setAuthError("Please check your inbox and confirm your email address before logging in.");
+                } else if (signInError.message === 'Invalid login credentials') {
+                    setAuthError("The email or password you entered is incorrect. Please try again.");
+                } else {
+                    setAuthError(signInError.message);
                 }
-                if (signInError.message === 'Invalid login credentials') {
-                    return { error: { message: "The email or password you entered is incorrect. Please double-check your credentials and try again." } };
-                }
-                return { error: signInError };
             }
-            
-            // On success, we don't set the state here. We let the onAuthStateChange listener handle it.
-            return { error: null };
+            // On success, the onAuthStateChange listener handles setting the user state.
         } catch (e: any) {
-            console.error("Auth: A critical, unexpected error occurred during the signIn process.", e);
-            return { error: { message: `A critical error occurred: ${e.message}` } };
+            console.error("Auth: A critical error occurred during login.", e);
+            setAuthError(`A critical error occurred: ${e.message}`);
         }
     };
 
-    const register = async (name: string, email: string, password: string) => {
+    const register = async (name: string, email: string, password: string): Promise<{ success: boolean }> => {
+        clearAuthError();
         try {
             const { error } = await supabase.auth.signUp({ 
                 email, 
                 password,
                 options: {
-                    data: {
-                        name: name,
-                    }
+                    data: { name }
                 }
             });
+
             if (error) {
                  if (error.message.includes("User already registered")) {
-                    return { error: { message: "This email is already registered. If you haven't confirmed your email, please check your inbox." } };
-                }
-                return { error };
+                    setAuthError("This email is already registered. If you haven't confirmed your email, please check your inbox.");
+                 } else {
+                    setAuthError(error.message);
+                 }
+                return { success: false };
             }
-
-            return { error: null };
+            return { success: true };
         } catch (e: any) {
-            console.error("Auth: A critical, unexpected error occurred during the signUp process.", e);
-            return { error: { message: `A critical error occurred: ${e.message}` } };
+            console.error("Auth: A critical error occurred during registration.", e);
+            setAuthError(`A critical error occurred: ${e.message}`);
+            return { success: false };
         }
     };
 
     const logout = async () => {
         console.log("Auth: Attempting to log out.");
+        setUser(null);
+        setSession(null);
+        setAuthError(null);
         try {
             const { error } = await supabase.auth.signOut();
             if (error) {
                 console.error("Auth: Error during Supabase sign out:", error);
-                // As a fallback, clear the local state manually if the server call fails.
-                setUser(null);
-                setSession(null);
             }
-            // If successful, the onAuthStateChange listener will handle setting user/session to null.
         } catch (e) {
             console.error("Auth: Critical error during logout process:", e);
-            // As a failsafe, also clear the local state.
-            setUser(null);
-            setSession(null);
         }
     };
     
@@ -168,10 +168,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         session,
         sessionLoading,
+        authError,
         login,
         register,
         logout,
-        setUser
+        setUser,
+        clearAuthError,
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

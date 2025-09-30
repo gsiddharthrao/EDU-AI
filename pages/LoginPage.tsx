@@ -7,39 +7,36 @@ const AlertTriangle: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 const LoginPage: React.FC = () => {
-    const { login, sessionLoading, user } = useAuth();
+    const { login, sessionLoading, user, authError, clearAuthError } = useAuth();
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
+        // If the user is already logged in, redirect them to the dashboard.
         if (user) {
             navigate('/dashboard', { replace: true });
         }
     }, [user, navigate]);
 
+    useEffect(() => {
+        // Clear any previous authentication errors when the component mounts.
+        clearAuthError();
+    }, [clearAuthError]);
+
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError('');
         if (!email || !password) {
-            setError('Please enter both email and password.');
-            return;
+            return; // Basic validation, can be enhanced
         }
 
         setIsSubmitting(true);
-        try {
-            const { error: authError } = await login(email, password);
-            if (authError) {
-                 setError(authError.message || 'Invalid email or password. Please try again.');
-            }
-        } catch (e: any) {
-            setError(e.message || "An unexpected error occurred during login.");
-        } finally {
-            setIsSubmitting(false);
-        }
+        await login(email, password);
+        // The onAuthStateChange listener in AuthContext will handle navigation on success
+        // or setting an error message on failure.
+        setIsSubmitting(false);
     };
 
     return (
@@ -74,10 +71,10 @@ const LoginPage: React.FC = () => {
                         />
                     </div>
                     
-                    {error && (
+                    {authError && (
                         <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg" role="alert">
                             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-                            <span className="text-sm">{error}</span>
+                            <span className="text-sm">{authError}</span>
                         </div>
                     )}
 
@@ -87,7 +84,7 @@ const LoginPage: React.FC = () => {
                             disabled={isSubmitting || sessionLoading}
                             className="w-full flex justify-center px-4 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                         >
-                            {isSubmitting ? (
+                            {isSubmitting || sessionLoading ? (
                                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
