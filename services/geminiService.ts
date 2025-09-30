@@ -1,6 +1,6 @@
 // FIX: Implement Gemini API services. This file was previously empty.
 import { GoogleGenAI, Type } from "@google/genai";
-import { LearningPath, UserProfile, ChatMessage, RecommendedVideo } from '../types';
+import { LearningPath, UserProfile, ChatMessage, RecommendedVideo, Module, SmartReview } from '../types';
 
 // FIX: Initialize GoogleGenAI client according to coding guidelines.
 // The API key MUST be obtained exclusively from the environment variable `process.env.API_KEY`.
@@ -194,5 +194,58 @@ export const streamChatbotResponse = async (
     } catch (error) {
         console.error("Error streaming chatbot response from Gemini:", error);
         onChunk("I'm sorry, I seem to be having some trouble right now. Please try again later.");
+    }
+};
+
+const smartReviewSchema = {
+    type: Type.OBJECT,
+    properties: {
+        summary: { type: Type.STRING },
+        flashcards: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    question: { type: Type.STRING },
+                    answer: { type: Type.STRING }
+                },
+                required: ['question', 'answer']
+            }
+        }
+    },
+    required: ['summary', 'flashcards']
+};
+
+export const generateSmartReview = async (module: Module): Promise<SmartReview> => {
+    const combinedContent = module.lessons.map(lesson => `Lesson: ${lesson.title}\n${lesson.content}`).join('\n\n---\n\n');
+
+    const prompt = `
+        You are an expert educational content creator. Based on the provided content for the module "${module.title}", please generate a smart review package.
+
+        The package should include:
+        1.  A concise 'summary' of the key concepts and most important takeaways from the entire module. This should be a single, well-written paragraph.
+        2.  A list of 3-5 'flashcards'. Each flashcard should be an object with a 'question' and a 'answer'. The questions should test the most critical information from the module, and the answers should be clear and direct.
+
+        Module Content:
+        ${combinedContent}
+
+        Return the response as a JSON object matching the provided schema.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: smartReviewSchema
+            }
+        });
+
+        const jsonText = response.text;
+        return JSON.parse(jsonText) as SmartReview;
+    } catch (error) {
+        console.error("Error generating smart review with Gemini:", error);
+        throw new Error("Failed to generate smart review from AI service.");
     }
 };

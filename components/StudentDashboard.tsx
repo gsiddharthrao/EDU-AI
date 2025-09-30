@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
-import { Lesson, UserProfile } from '../types';
+import { Lesson, UserProfile, Module, SmartReview } from '../types';
 import ProfileForm from './ProfileForm';
 import LearningPathAccordion from './LearningPathAccordion';
 import GamificationDisplay from './GamificationDisplay';
 import Leaderboard from './Leaderboard';
+import SmartReviewModal from './SmartReviewModal';
+import { generateSmartReview } from '../services/geminiService';
 
 const StudentDashboard: React.FC = () => {
     const { user } = useAuth();
@@ -20,6 +22,9 @@ const StudentDashboard: React.FC = () => {
     
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [reviewModule, setReviewModule] = useState<Module | null>(null);
+    const [reviewContent, setReviewContent] = useState<SmartReview | null>(null);
+    const [isGeneratingReview, setIsGeneratingReview] = useState(false);
 
     const userProfileExists = user?.profile?.career_aspirations && user.profile.skills.length > 0;
     
@@ -39,6 +44,27 @@ const StudentDashboard: React.FC = () => {
     const handleLessonComplete = (lesson: Lesson) => {
         completeLesson(lesson.id);
         // You could add logic here to award points/badges based on the lesson
+    };
+    
+    const handleStartSmartReview = async (module: Module) => {
+        setReviewModule(module);
+        setIsGeneratingReview(true);
+        setReviewContent(null);
+        try {
+            const content = await generateSmartReview(module);
+            setReviewContent(content);
+        } catch (error) {
+            console.error("Failed to generate smart review:", error);
+            // In a real app, you'd want to show an error message in the modal
+            setReviewContent({ summary: "Sorry, we couldn't generate a review at this time. Please try again later.", flashcards: [] });
+        } finally {
+            setIsGeneratingReview(false);
+        }
+    };
+
+    const handleCloseReviewModal = () => {
+        setReviewModule(null);
+        setReviewContent(null);
     };
     
     const completedLessons = useMemo(() => new Set(user?.completed_lessons || []), [user?.completed_lessons]);
@@ -87,6 +113,7 @@ const StudentDashboard: React.FC = () => {
                         onLessonComplete={handleLessonComplete}
                         completedLessons={completedLessons}
                         searchTerm={searchTerm}
+                        onStartSmartReview={handleStartSmartReview}
                     />
                 </div>
             );
@@ -132,15 +159,26 @@ const StudentDashboard: React.FC = () => {
     }
     
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-8">
-                {renderContent()}
+        <>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-8">
+                    {renderContent()}
+                </div>
+                <div className="lg:col-span-1 space-y-8">
+                    <GamificationDisplay completionPercentage={completionPercentage} />
+                    <Leaderboard data={leaderboard} currentUserId={user.id} />
+                </div>
             </div>
-            <div className="lg:col-span-1 space-y-8">
-                <GamificationDisplay completionPercentage={completionPercentage} />
-                <Leaderboard data={leaderboard} currentUserId={user.id} />
-            </div>
-        </div>
+            {reviewModule && (
+                <SmartReviewModal
+                    module={reviewModule}
+                    isOpen={!!reviewModule}
+                    onClose={handleCloseReviewModal}
+                    reviewContent={reviewContent}
+                    isLoading={isGeneratingReview}
+                />
+            )}
+        </>
     );
 };
 

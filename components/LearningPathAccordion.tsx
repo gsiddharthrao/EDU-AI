@@ -7,6 +7,7 @@ interface LearningPathAccordionProps {
     onLessonComplete: (lesson: Lesson) => void;
     completedLessons: Set<string>;
     searchTerm: string;
+    onStartSmartReview: (module: Module) => void;
 }
 
 const getDifficultyClass = (difficulty: Difficulty | undefined) => {
@@ -18,7 +19,7 @@ const getDifficultyClass = (difficulty: Difficulty | undefined) => {
     }
 };
 
-const LearningPathAccordion: React.FC<LearningPathAccordionProps> = ({ path, onLessonComplete, completedLessons, searchTerm }) => {
+const LearningPathAccordion: React.FC<LearningPathAccordionProps> = ({ path, onLessonComplete, completedLessons, searchTerm, onStartSmartReview }) => {
     const [openModuleId, setOpenModuleId] = useState<string | null>(path.modules?.[0]?.id || null);
     const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
 
@@ -91,6 +92,8 @@ const LearningPathAccordion: React.FC<LearningPathAccordionProps> = ({ path, onL
             <p className="text-content-light dark:text-content-dark mb-4">{filteredPath.description}</p>
             
             {(filteredPath.modules || []).map((module: Module) => {
+                const isModuleComplete = module.lessons.every(lesson => completedLessons.has(lesson.id));
+
                 return (
                     <div key={module.id} className="border dark:border-gray-700 rounded-lg overflow-hidden">
                         <button
@@ -115,8 +118,8 @@ const LearningPathAccordion: React.FC<LearningPathAccordionProps> = ({ path, onL
                             </div>
                         </button>
                         {openModuleId === module.id && (
-                            <div className="p-4 bg-white dark:bg-neutral-light/5 animate-fade-in-up">
-                                <ul className="space-y-2">
+                            <div className="bg-white dark:bg-neutral-light/5 animate-fade-in-up">
+                                <ul className="space-y-2 p-4">
                                     {(module.lessons || []).map((lesson: Lesson) => (
                                         <li key={lesson.id}>
                                             <button
@@ -133,6 +136,16 @@ const LearningPathAccordion: React.FC<LearningPathAccordionProps> = ({ path, onL
                                         </li>
                                     ))}
                                 </ul>
+                                {isModuleComplete && (
+                                    <div className="p-4 border-t dark:border-gray-700 text-center">
+                                        <button
+                                            onClick={() => onStartSmartReview(module)}
+                                            className="px-5 py-2 bg-accent text-white font-semibold rounded-lg hover:bg-amber-600 transition-colors transform hover:scale-105"
+                                        >
+                                            ✨ Smart Review
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

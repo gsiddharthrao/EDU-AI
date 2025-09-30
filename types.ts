@@ -132,3 +132,19 @@ export interface RecommendedVideo {
     videoId: string;
     thumbnailUrl: string;
 }
+
+/**
+ * Represents a single flashcard for knowledge reinforcement.
+ */
+export interface Flashcard {
+    question: string;
+    answer: string;
+}
+
+/**
+ * Represents the content of an AI-generated smart review.
+ */
+export interface SmartReview {
+    summary: string;
+    flashcards: Flashcard[];
+}
