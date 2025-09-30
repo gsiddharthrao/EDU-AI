@@ -4,7 +4,7 @@ import LessonContentModal from './LessonContentModal';
 
 interface LearningPathAccordionProps {
     path: LearningPath;
-    onLessonComplete: (lesson: Lesson) => void;
+    onLessonComplete: (lesson: Lesson) => Promise<void>;
     completedLessons: Set<string>;
     searchTerm: string;
     onStartSmartReview: (module: Module) => void;
@@ -14,7 +14,7 @@ const getDifficultyClass = (difficulty: Difficulty | undefined) => {
     switch (difficulty) {
         case 'Beginner': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300';
         case 'Intermediate': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300';
-        case 'Advanced': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
+        case 'Advanced': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:red-300';
         default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
     }
 };
@@ -68,9 +68,9 @@ const LearningPathAccordion: React.FC<LearningPathAccordionProps> = ({ path, onL
         setSelectedLesson(null);
     };
 
-    const handleLessonCompleteFlow = () => {
+    const handleLessonCompleteFlow = async () => {
         if (selectedLesson) {
-            onLessonComplete(selectedLesson);
+            await onLessonComplete(selectedLesson);
         }
         setSelectedLesson(null);
     };

@@ -60,54 +60,66 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [sessionLoading, setSessionLoading] = useState(true);
 
     useEffect(() => {
+        console.log("Auth: Starting up auth provider.");
+
         const checkInitialSession = async () => {
-            console.log("Auth: Starting initial session check...");
+            setSessionLoading(true);
             try {
-                const { data: { session: initialSession } } = await supabase.auth.getSession();
+                console.log("Auth: Performing initial getSession() check.");
+                const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+
+                if (sessionError) throw sessionError;
+
                 if (initialSession?.user) {
-                    console.log("Auth: Initial session found. Fetching profile.");
+                    console.log("Auth: Active initial session found. Fetching user profile.");
                     const userProfile = await fetchUserProfile(initialSession.user);
                     if (userProfile && !userProfile.is_locked) {
                         setUser(userProfile);
                         setSession(initialSession);
                         console.log("Auth: Initial session and profile loaded successfully.");
                     } else {
-                         await supabase.auth.signOut();
+                         console.log("Auth: Initial session found, but profile fetch failed or user is locked. Clearing session locally.");
                          setUser(null);
                          setSession(null);
                     }
                 } else {
                     console.log("Auth: No initial session found.");
+                    setUser(null);
+                    setSession(null);
                 }
-            } catch (e) {
-                console.error("Auth: Error during initial session check.", e);
+            } catch (error) {
+                console.error("Auth: Critical error during initial session check:", error);
+                setUser(null);
+                setSession(null);
             } finally {
+                // CRITICAL: This guarantees the loading state is always turned off and unlocks the UI.
                 setSessionLoading(false);
-                console.log("Auth: Initial session check complete. Loading finished.");
+                console.log("Auth: Initial session check finished. UI is now unlocked.");
             }
         };
 
         checkInitialSession();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-             console.log(`Auth: Auth state change detected. Event: ${_event}`);
-            if (newSession?.user) {
-                if (newSession.user.id !== user?.id) { 
-                    const userProfile = await fetchUserProfile(newSession.user);
-                     if (userProfile && !userProfile.is_locked) {
-                        setUser(userProfile);
-                        setSession(newSession);
-                    } else {
-                        setUser(null);
-                        setSession(null);
-                    }
+        // Set up the listener for all subsequent auth events (e.g., explicit sign-in/out).
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+            console.log(`Auth: Auth state changed. Event: ${event}`);
+            if (event === 'SIGNED_IN' && newSession?.user) {
+                const userProfile = await fetchUserProfile(newSession.user);
+                if (userProfile && !userProfile.is_locked) {
+                    setUser(userProfile);
+                    setSession(newSession);
+                } else {
+                    // If sign-in event occurs but profile is missing/locked, force sign-out to prevent inconsistent state.
+                    await supabase.auth.signOut();
+                    setUser(null);
+                    setSession(null);
                 }
-            } else {
+            } else if (event === 'SIGNED_OUT') {
                 setUser(null);
                 setSession(null);
             }
         });
-
+    
         return () => {
             console.log("Auth: Unsubscribing from auth state changes.");
             subscription.unsubscribe();
@@ -124,7 +136,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     return { error: { message: "Please check your inbox and confirm your email address before logging in." } };
                 }
                 if (signInError.message === 'Invalid login credentials') {
-                    return { error: { message: "Invalid email or password. Please try again or register for a new account." } };
+                    return { error: { message: "The email or password you entered is incorrect. Please double-check your credentials and try again." } };
                 }
                 return { error: signInError };
             } 

@@ -11,6 +11,7 @@ interface AppContextType {
     isGeneratingPath: boolean;
     learningPath: LearningPath | null;
     leaderboard: LeaderboardEntry[];
+    isLeaderboardLoading: boolean;
     generateLearningPath: (profile: UserProfile) => Promise<void>;
     updateUserProfile: (newProfile: UserProfile) => Promise<void>;
     completeLesson: (lessonId: string) => Promise<void>;
@@ -35,6 +36,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const [isGeneratingPath, setIsGeneratingPath] = useState(false);
     const [learningPath, setLearningPath] = useState<LearningPath | null>(null);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+    const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
     const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'en');
     const [notification, setNotification] = useState<Badge | null>(null);
@@ -86,42 +88,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, [language]);
 
     const fetchLeaderboard = useCallback(async () => {
-        // FIX: Check if Supabase client is initialized with placeholder keys. If so, use mock data.
-        const isPlaceholder = supabase.auth.getSession === undefined || !process.env.VITE_SUPABASE_URL;
-        if (isPlaceholder) {
-            setLeaderboard(MOCK_LEADERBOARD);
-            return;
-        }
+        setIsLeaderboardLoading(true);
+        try {
+            const isPlaceholder = supabase.auth.getSession === undefined || !process.env.VITE_SUPABASE_URL;
+            if (isPlaceholder) {
+                setLeaderboard(MOCK_LEADERBOARD);
+                return;
+            }
 
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('id, name, email, points, badges')
-            .order('points', { ascending: false })
-            .limit(10);
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('id, name, email, points, badges')
+                .order('points', { ascending: false })
+                .limit(10);
 
-        if (error) {
-            console.error('Error fetching leaderboard:', error);
-            setLeaderboard(MOCK_LEADERBOARD); // Fallback to mock data on error
-            return;
-        }
+            if (error) {
+                console.error('Error fetching leaderboard:', error);
+                setLeaderboard(MOCK_LEADERBOARD); // Fallback to mock data on error
+                return;
+            }
 
-        if (data) {
-            const leaderboardData: LeaderboardEntry[] = data.map((profile, index) => {
-                let displayName = profile.name;
-                // If the name is missing, create a fallback from the email.
-                if (!displayName && profile.email) {
-                    displayName = profile.email.split('@')[0];
-                }
+            if (data) {
+                const leaderboardData: LeaderboardEntry[] = data.map((profile, index) => {
+                    let displayName = profile.name;
+                    if (!displayName && profile.email) {
+                        displayName = profile.email.split('@')[0];
+                    }
 
-                return {
-                    id: profile.id,
-                    rank: index + 1,
-                    name: displayName || 'Anonymous', // Final fallback
-                    points: profile.points,
-                    badges: profile.badges || [],
-                };
-            });
-            setLeaderboard(leaderboardData);
+                    return {
+                        id: profile.id,
+                        rank: index + 1,
+                        name: displayName || 'Anonymous',
+                        points: profile.points,
+                        badges: profile.badges || [],
+                    };
+                });
+                setLeaderboard(leaderboardData);
+            }
+        } finally {
+            setIsLeaderboardLoading(false);
         }
     }, []);
 
@@ -154,7 +159,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (error) {
             console.error('Error updating profile:', error);
-            return;
+            throw error; // Propagate error for component-level handling
         }
 
         if (newBadge) {
@@ -205,6 +210,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
         } catch (error) {
             console.error("Failed to generate or fetch learning path", error);
+            throw error; // Propagate error
         } finally {
             setIsGeneratingPath(false);
         }
@@ -267,6 +273,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 completed_lessons: user.completed_lessons,
                 points: user.points,
             }) : null);
+            throw error; // Propagate error
         }
     }, [user, setUser]);
     
@@ -275,7 +282,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const value: AppContextType = {
-        learningPath, leaderboard, isGeneratingPath,
+        learningPath, leaderboard, isGeneratingPath, isLeaderboardLoading,
         generateLearningPath, updateUserProfile, completeLesson, awardPointsAndBadge,
         streamChatbotResponse,
         theme, toggleTheme,

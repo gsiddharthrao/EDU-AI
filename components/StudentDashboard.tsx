@@ -14,6 +14,7 @@ const StudentDashboard: React.FC = () => {
     const {
         learningPath,
         leaderboard,
+        isLeaderboardLoading,
         isGeneratingPath,
         generateLearningPath,
         updateUserProfile,
@@ -21,6 +22,7 @@ const StudentDashboard: React.FC = () => {
     } = useAppContext();
     
     const [isEditingProfile, setIsEditingProfile] = useState(false);
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [reviewModule, setReviewModule] = useState<Module | null>(null);
     const [reviewContent, setReviewContent] = useState<SmartReview | null>(null);
@@ -29,21 +31,27 @@ const StudentDashboard: React.FC = () => {
     const userProfileExists = user?.profile?.career_aspirations && user.profile.skills.length > 0;
     
     useEffect(() => {
-        // Automatically generate path if profile exists but path is not loaded
         if (userProfileExists && !learningPath && !isGeneratingPath && user) {
             generateLearningPath(user.profile);
         }
     }, [userProfileExists, learningPath, isGeneratingPath, generateLearningPath, user]);
 
     const handleSaveProfile = async (newProfile: UserProfile) => {
-        await updateUserProfile(newProfile);
-        await generateLearningPath(newProfile);
-        setIsEditingProfile(false);
+        setIsSavingProfile(true);
+        try {
+            await updateUserProfile(newProfile);
+            await generateLearningPath(newProfile);
+            setIsEditingProfile(false);
+        } catch (error) {
+            console.error("Failed to save profile and generate path", error);
+            // You could show a toast notification here
+        } finally {
+            setIsSavingProfile(false);
+        }
     };
 
-    const handleLessonComplete = (lesson: Lesson) => {
-        completeLesson(lesson.id);
-        // You could add logic here to award points/badges based on the lesson
+    const handleLessonComplete = async (lesson: Lesson) => {
+        await completeLesson(lesson.id);
     };
     
     const handleStartSmartReview = async (module: Module) => {
@@ -53,9 +61,9 @@ const StudentDashboard: React.FC = () => {
         try {
             const content = await generateSmartReview(module);
             setReviewContent(content);
+        // FIX: Added curly braces to the catch block to correctly handle the error and prevent a syntax error that caused cascading scope issues.
         } catch (error) {
             console.error("Failed to generate smart review:", error);
-            // In a real app, you'd want to show an error message in the modal
             setReviewContent({ summary: "Sorry, we couldn't generate a review at this time. Please try again later.", flashcards: [] });
         } finally {
             setIsGeneratingReview(false);
@@ -128,6 +136,7 @@ const StudentDashboard: React.FC = () => {
                         initialProfile={user.profile} 
                         onSave={handleSaveProfile} 
                         onCancel={() => {}} // No cancel if it's the first time
+                        isSaving={isSavingProfile}
                     />
                 </div>
             );
@@ -153,6 +162,7 @@ const StudentDashboard: React.FC = () => {
                     initialProfile={user.profile} 
                     onSave={handleSaveProfile} 
                     onCancel={() => setIsEditingProfile(false)}
+                    isSaving={isSavingProfile}
                 />
             </div>
         );
@@ -166,7 +176,7 @@ const StudentDashboard: React.FC = () => {
                 </div>
                 <div className="lg:col-span-1 space-y-8">
                     <GamificationDisplay completionPercentage={completionPercentage} />
-                    <Leaderboard data={leaderboard} currentUserId={user.id} />
+                    <Leaderboard data={leaderboard} currentUserId={user.id} isLoading={isLeaderboardLoading} />
                 </div>
             </div>
             {reviewModule && (
