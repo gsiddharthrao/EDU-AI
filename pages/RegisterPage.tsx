@@ -40,14 +40,13 @@ const RegisterPage: React.FC = () => {
         if (authError) {
           setError(authError.message);
         } else {
-          // Set a clear success message for the user.
           setSuccessMessage("Success! Please check your email for a confirmation link to activate your account.");
-          // Don't navigate away, let the user see the message.
         }
     } catch (e: any) {
         setError(e.message || "An unexpected error occurred.");
+    } finally {
+        setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   return (
