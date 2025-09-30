@@ -14,7 +14,10 @@ const fetchUserProfile = async (sessionUser: SupabaseUser): Promise<User | null>
             .single();
 
         if (error) {
-            console.error('Auth: Supabase error fetching user profile. This is likely due to missing RLS policies.', { code: error.code, message: error.message });
+            // This is an expected error if the profile doesn't exist (e.g., stale session).
+            if (error.code !== 'PGRST116') { // PGRST116 is "Query returned no rows"
+                 console.error('Auth: Supabase error fetching user profile. Check RLS policies.', { code: error.code, message: error.message });
+            }
             return null;
         }
 
@@ -47,7 +50,6 @@ interface AuthContextType {
     session: Session | null;
     sessionLoading: boolean;
     authError: string | null;
-    isSessionInvalid: boolean;
     login: (email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     register: (name: string, email: string, password: string) => Promise<{ success: boolean }>;
@@ -62,7 +64,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [session, setSession] = useState<Session | null>(null);
     const [sessionLoading, setSessionLoading] = useState(true);
     const [authError, setAuthError] = useState<string | null>(null);
-    const [isSessionInvalid, setIsSessionInvalid] = useState(false);
 
     const clearAuthError = () => setAuthError(null);
 
@@ -74,7 +75,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 
                 if (profile) {
                     // This is a valid session with a valid profile.
-                    setIsSessionInvalid(false);
                     setAuthError(null);
 
                     if (profile.is_locked) {
@@ -85,18 +85,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                         setSession(session);
                     }
                 } else {
-                    // CRITICAL: Authenticated user with no profile. This is an invalid state.
-                    console.error("Auth: User has a valid session but no profile. Triggering session invalidation flow.");
-                    setIsSessionInvalid(true);
-                    // Clear local state immediately
-                    setUser(null);
-                    setSession(null);
+                    // CRITICAL: Authenticated user with no profile. The session is stale/invalid.
+                    // Sign out immediately to destroy the bad session. The listener will be
+                    // re-triggered with a null session, which will clean up the app state.
+                    console.warn("Auth: Stale session detected (user exists but profile is missing). Forcing sign-out.");
+                    await supabase.auth.signOut();
                 }
             } else {
                 // No session, user is logged out. This is a valid, clean state.
-                setIsSessionInvalid(false);
                 setUser(null);
-                setSession(session); // session is null here
+                setSession(null);
                 setAuthError(null);
             }
             setSessionLoading(false);
@@ -158,6 +156,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const logout = async () => {
         console.log("Auth: Attempting to log out.");
+        // Clear local state immediately for a faster UI response.
         setUser(null);
         setSession(null);
         setAuthError(null);
@@ -176,7 +175,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         session,
         sessionLoading,
         authError,
-        isSessionInvalid,
         login,
         register,
         logout,
