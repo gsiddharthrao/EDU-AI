@@ -8,7 +8,7 @@ import { generateProfileHash } from '../lib/crypto';
 import { useAuth } from './AuthContext';
 
 interface AppContextType {
-    isGeneratingPath: boolean;
+    isPathLoading: boolean;
     learningPath: LearningPath | null;
     pathError: string | null;
     leaderboard: LeaderboardEntry[];
@@ -31,10 +31,15 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const isMobile = () => {
+    // A simple check for mobile user agents.
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { user, setUser } = useAuth();
 
-    const [isGeneratingPath, setIsGeneratingPath] = useState(false);
+    const [isPathLoading, setIsPathLoading] = useState(true);
     const [learningPath, setLearningPath] = useState<LearningPath | null>(null);
     const [pathError, setPathError] = useState<string | null>(null);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -44,7 +49,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const [notification, setNotification] = useState<Badge | null>(null);
     const [isAnimationEnabled, setIsAnimationEnabled] = useState(() => {
         const saved = localStorage.getItem('animationEnabled');
-        return saved !== null ? JSON.parse(saved) : true;
+        // Disable by default on mobile for better performance.
+        return saved !== null ? JSON.parse(saved) : !isMobile();
     });
     const notificationTimerRef = useRef<number | null>(null);
     
@@ -132,52 +138,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
     }, []);
 
-    useEffect(() => {
-        fetchLeaderboard();
-        if (!user) {
-            setLearningPath(null);
-        }
-    }, [fetchLeaderboard, user]);
-
-    const updateUserProfile = async (newProfile: UserProfile): Promise<void> => {
-        if (!user) return;
-
-        let updates: any = {
-            skills: newProfile.skills,
-            career_aspirations: newProfile.career_aspirations,
-        };
-        
-        let newBadge: Badge | undefined;
-        if(!user.badges.includes('profile_powerup')){
-            updates.badges = [...user.badges, 'profile_powerup'];
-            updates.points = user.points + 10;
-            newBadge = AVAILABLE_BADGES.find(b => b.id === 'profile_powerup');
-        }
-
-        const { error } = await supabase
-            .from('profiles')
-            .update(updates)
-            .eq('id', user.id);
-
-        if (error) {
-            console.error('Error updating profile:', error);
-            throw error; // Propagate error for component-level handling
-        }
-
-        if (newBadge) {
-            showNotification(newBadge);
-        }
-
-        setUser(currentUser => currentUser ? {
-            ...currentUser,
-            profile: newProfile,
-            points: updates.points !== undefined ? updates.points : currentUser.points,
-            badges: updates.badges !== undefined ? updates.badges : currentUser.badges,
-        } : null);
-    };
-
-    const generateLearningPath = async (profile: UserProfile) => {
-        setIsGeneratingPath(true);
+    const generateLearningPath = useCallback(async (profile: UserProfile) => {
+        setIsPathLoading(true);
         setLearningPath(null);
         setPathError(null);
         try {
@@ -215,8 +177,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             console.error("Failed to generate or fetch learning path", error);
             setPathError("We couldn't generate your learning path. The AI service may be busy, or there might be a network issue. Please try again in a moment.");
         } finally {
-            setIsGeneratingPath(false);
+            setIsPathLoading(false);
         }
+    }, []);
+
+    useEffect(() => {
+        fetchLeaderboard();
+    }, [fetchLeaderboard, user]);
+
+    useEffect(() => {
+        // This effect centrally manages loading or generating the path when the user's auth state changes.
+        if (user) {
+            const profileIsComplete = user.profile?.career_aspirations && user.profile.skills?.length > 0;
+            if (profileIsComplete) {
+                // User has a complete profile, so attempt to load or generate their path.
+                generateLearningPath(user.profile);
+            } else {
+                // This is a new user or a user with an incomplete profile.
+                // We don't generate a path automatically. The dashboard will show the profile form.
+                console.log("User profile incomplete, skipping automatic path generation.");
+                setLearningPath(null);
+                setIsPathLoading(false); 
+            }
+        } else {
+            // User is logged out, clear all path-related state.
+            setLearningPath(null);
+            setPathError(null);
+            setIsPathLoading(false);
+        }
+    }, [user, generateLearningPath]);
+
+    const updateUserProfile = async (newProfile: UserProfile): Promise<void> => {
+        if (!user) return;
+
+        let updates: any = {
+            skills: newProfile.skills,
+            career_aspirations: newProfile.career_aspirations,
+        };
+        
+        let newBadge: Badge | undefined;
+        if(!user.badges.includes('profile_powerup')){
+            updates.badges = [...user.badges, 'profile_powerup'];
+            updates.points = user.points + 10;
+            newBadge = AVAILABLE_BADGES.find(b => b.id === 'profile_powerup');
+        }
+
+        const { error } = await supabase
+            .from('profiles')
+            .update(updates)
+            .eq('id', user.id);
+
+        if (error) {
+            console.error('Error updating profile:', error);
+            throw error; // Propagate error for component-level handling
+        }
+
+        if (newBadge) {
+            showNotification(newBadge);
+        }
+
+        setUser(currentUser => currentUser ? {
+            ...currentUser,
+            profile: newProfile,
+            points: updates.points !== undefined ? updates.points : currentUser.points,
+            badges: updates.badges !== undefined ? updates.badges : currentUser.badges,
+        } : null);
     };
     
     const awardPointsAndBadge = useCallback(async (points: number, badgeId?: string): Promise<void> => {
@@ -285,7 +310,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const value: AppContextType = {
-        learningPath, leaderboard, isGeneratingPath, isLeaderboardLoading, pathError,
+        learningPath, leaderboard, isPathLoading, isLeaderboardLoading, pathError,
         generateLearningPath, updateUserProfile, completeLesson, awardPointsAndBadge,
         streamChatbotResponse,
         theme, toggleTheme,

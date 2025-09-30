@@ -60,38 +60,63 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [sessionLoading, setSessionLoading] = useState(true);
 
     useEffect(() => {
-        console.log("Auth: Setting up unified auth state listener.");
-        // Set loading to true initially. It will be set to false after the first auth event is received.
-        setSessionLoading(true);
-
-        // The onAuthStateChange listener is the single source of truth.
-        // It fires an INITIAL_SESSION event on page load, and subsequent events for SIGNED_IN, SIGNED_OUT, etc.
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-            console.log(`Auth: Auth state change detected. Event: ${event}, Session: ${newSession ? 'Exists' : 'Null'}`);
-
-            if (newSession?.user) {
-                // This handles SIGNED_IN, TOKEN_REFRESHED, and INITIAL_SESSION with a user.
-                const userProfile = await fetchUserProfile(newSession.user);
-                if (userProfile && !userProfile.is_locked) {
-                    setUser(userProfile);
-                    setSession(newSession);
+        // This hybrid approach is foolproof for all devices.
+        // 1. Proactively check the session on initial load.
+        const checkInitialSession = async () => {
+            console.log("Auth: Performing proactive initial session check.");
+            try {
+                const { data: { session: initialSession } } = await supabase.auth.getSession();
+                if (initialSession?.user) {
+                    console.log("Auth: Proactive check found an active session.");
+                    const userProfile = await fetchUserProfile(initialSession.user);
+                    if (userProfile && !userProfile.is_locked) {
+                        setUser(userProfile);
+                        setSession(initialSession);
+                    } else {
+                         // Keep session, clear local user.
+                        setUser(null);
+                        setSession(initialSession);
+                    }
                 } else {
-                    // If profile is missing or user is locked, force a clean state by signing out.
-                    // This prevents the user from being stuck in a valid session without a valid profile.
-                    console.log("Auth: Profile not found or user locked. Forcing sign-out.");
-                    await supabase.auth.signOut();
+                    console.log("Auth: Proactive check found no active session.");
                     setUser(null);
                     setSession(null);
                 }
+            } catch (e) {
+                console.error("Auth: Error during proactive session check.", e);
+                setUser(null);
+                setSession(null);
+            } finally {
+                // CRITICAL: This guarantees the loading state is always resolved, unlocking the UI.
+                setSessionLoading(false);
+                console.log("Auth: Initial session check finished. UI is now unlocked.");
+            }
+        };
+
+        checkInitialSession();
+
+        // 2. Set up a listener for subsequent auth changes (login, logout, token refresh).
+        console.log("Auth: Setting up auth state change listener for subsequent events.");
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+             console.log(`Auth: Auth state change detected. Event: ${event}`);
+            if (event === 'INITIAL_SESSION') {
+                // This is now handled by our proactive check above, so we can ignore it
+                // to prevent race conditions.
+                return;
+            }
+
+            if (newSession?.user) {
+                const userProfile = await fetchUserProfile(newSession.user);
+                if (userProfile && !userProfile.is_locked) {
+                    setUser(userProfile);
+                } else {
+                    setUser(null);
+                }
+                setSession(newSession);
             } else {
-                // This handles SIGNED_OUT and INITIAL_SESSION without a user.
                 setUser(null);
                 setSession(null);
             }
-
-            // CRITICAL: Once the first event is processed, loading is complete, which unlocks the UI.
-            setSessionLoading(false);
-            console.log("Auth: Auth event processed. UI is now unlocked.");
         });
 
         return () => {

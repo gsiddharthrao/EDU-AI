@@ -16,7 +16,7 @@ const StudentDashboard: React.FC = () => {
         pathError,
         leaderboard,
         isLeaderboardLoading,
-        isGeneratingPath,
+        isPathLoading,
         generateLearningPath,
         updateUserProfile,
         completeLesson,
@@ -28,14 +28,6 @@ const StudentDashboard: React.FC = () => {
     const [reviewModule, setReviewModule] = useState<Module | null>(null);
     const [reviewContent, setReviewContent] = useState<SmartReview | null>(null);
     const [isGeneratingReview, setIsGeneratingReview] = useState(false);
-
-    const userProfileExists = user?.profile?.career_aspirations && user.profile.skills.length > 0;
-    
-    useEffect(() => {
-        if (userProfileExists && !learningPath && !isGeneratingPath && user && !pathError) {
-            generateLearningPath(user.profile);
-        }
-    }, [userProfileExists, learningPath, isGeneratingPath, generateLearningPath, user, pathError]);
 
     const handleSaveProfile = async (newProfile: UserProfile) => {
         setIsSavingProfile(true);
@@ -90,11 +82,11 @@ const StudentDashboard: React.FC = () => {
     const renderContent = () => {
         if (!user) return null;
 
-        if (isGeneratingPath) {
+        if (isPathLoading) {
             return (
                 <div className="text-center p-12 bg-white dark:bg-neutral-light/20 rounded-lg shadow-lg">
-                    <h2 className="text-2xl font-semibold text-primary mb-4 animate-pulse">Generating Your Personal Learning Path...</h2>
-                    <p className="text-content-light dark:text-content-dark">Our AI is crafting the perfect journey for you. This might take a moment.</p>
+                    <h2 className="text-2xl font-semibold text-primary mb-4 animate-pulse">Crafting Your Journey...</h2>
+                    <p className="text-content-light dark:text-content-dark">Our AI is preparing your personalized dashboard. This may take a moment.</p>
                 </div>
             );
         }
@@ -142,9 +134,12 @@ const StudentDashboard: React.FC = () => {
                 </div>
             );
         }
-
+        
+        // This case is for when loading is finished, there's no error, and no path exists.
+        // This will be shown for new users with incomplete profiles.
+        const userProfileExists = user.profile?.career_aspirations && user.profile.skills.length > 0;
         if (!userProfileExists) {
-            return (
+             return (
                 <div className="text-center p-8 bg-white dark:bg-neutral-light/20 rounded-lg shadow-lg animate-fade-in">
                     <h2 className="text-2xl font-semibold mb-2">Welcome, {user.name}!</h2>
                     <p className="mb-6 text-content-light dark:text-content-dark">Let's create your personalized learning path. Tell us about your goals.</p>
@@ -158,9 +153,18 @@ const StudentDashboard: React.FC = () => {
             );
         }
 
+
+        // Fallback for an existing user who has a complete profile but somehow no path was generated.
         return (
              <div className="text-center p-12 bg-white dark:bg-neutral-light/20 rounded-lg shadow-lg">
-                <p className="text-content-light dark:text-content-dark">Something went wrong. Please try refreshing the page.</p>
+                <h2 className="text-2xl font-semibold mb-2">Let's Create Your Path!</h2>
+                <p className="mb-6 text-content-light dark:text-content-dark">We couldn't find a learning path for you. Please confirm your profile details to generate one.</p>
+                 <button
+                    onClick={() => setIsEditingProfile(true)}
+                    className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                    Review Profile & Generate Path
+                </button>
              </div>
         );
     };
