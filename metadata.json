@@ -1,0 +1,7 @@
+{
+  "name": "EDUAI - AI-Powered Personalized Learning Path Generator",
+  "description": "An AI-driven platform that generates dynamic, personalized learning paths for Indian vocational learners, integrating React, Gemini AI, labor market data, and user management for a comprehensive educational experience.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
