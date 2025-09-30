@@ -5,6 +5,7 @@ import { User } from '../types';
 
 // Helper function to fetch user profile from Supabase
 const fetchUserProfile = async (sessionUser: SupabaseUser): Promise<User | null> => {
+    console.log("Auth: Attempting to fetch profile for user:", sessionUser.id);
     try {
         const { data, error } = await supabase
             .from('profiles')
@@ -14,12 +15,15 @@ const fetchUserProfile = async (sessionUser: SupabaseUser): Promise<User | null>
 
         if (error) {
             if (error.code !== 'PGRST116') { // Ignore 'exact one row not found'
-                console.error('Error fetching user profile:', error);
+                console.error('Auth: Supabase error fetching user profile:', { code: error.code, message: error.message, details: error.details });
+            } else {
+                console.warn("Auth: Profile not found for user:", sessionUser.id, "(This is expected if the profile hasn't been created or RLS is blocking).");
             }
             return null;
         }
 
         if (data) {
+             console.log("Auth: Successfully fetched profile for user:", sessionUser.id);
             return {
                 id: sessionUser.id,
                 email: sessionUser.email!,
@@ -37,7 +41,7 @@ const fetchUserProfile = async (sessionUser: SupabaseUser): Promise<User | null>
         }
         return null;
     } catch (e) {
-        console.error('Exception fetching user profile:', e);
+        console.error('Auth: Critical exception during fetchUserProfile:', e);
         return null;
     }
 };
@@ -60,41 +64,54 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [sessionLoading, setSessionLoading] = useState(true);
 
     useEffect(() => {
-        // This effect is the core of session management.
-        // It runs once when the app loads to check for an existing session.
-        // Supabase's `onAuthStateChange` listener fires immediately with the current
-        // session if the user was previously logged in, enabling auto-login.
         setSessionLoading(true);
+        console.log("Auth: Setting up auth state change listener.");
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            setSession(session);
-            if (session?.user) {
-                const userProfile = await fetchUserProfile(session.user);
-                // A user is considered logged in only if they have a session AND a valid, non-locked profile.
-                if (userProfile && !userProfile.is_locked) {
-                    setUser(userProfile);
+            console.log(`Auth: Auth state change detected. Event: ${_event}`);
+            try {
+                setSession(session);
+                if (session?.user) {
+                    const userProfile = await fetchUserProfile(session.user);
+                    if (userProfile && !userProfile.is_locked) {
+                        setUser(userProfile);
+                        console.log("Auth: User session restored and profile loaded successfully.");
+                    } else {
+                         if (!userProfile) {
+                            console.error("Auth: Session exists, but user profile could not be fetched. This could be due to RLS policies or a missing profile. Forcing sign out.");
+                        }
+                        if (userProfile?.is_locked) {
+                            console.warn("Auth: User account is locked. Forcing sign out.");
+                        }
+                        setUser(null);
+                        await supabase.auth.signOut();
+                    }
                 } else {
-                    // If no profile is found or the account is locked, clear the user state
-                    // and force a sign-out to prevent being in an inconsistent state.
                     setUser(null);
-                    await supabase.auth.signOut();
                 }
-            } else {
-                // If there is no session, ensure the user state is cleared.
-                setUser(null);
+            } catch (e) {
+                console.error("Auth: A critical error occurred in onAuthStateChange. This is unexpected.", e);
+                setUser(null); 
+            } finally {
+                // This block is guaranteed to run, ensuring the app is never stuck in a loading state.
+                setSessionLoading(false);
+                console.log("Auth: Session loading finished.");
             }
-            setSessionLoading(false);
         });
 
-        // Unsubscribe from the listener when the component unmounts.
-        return () => subscription.unsubscribe();
+        return () => {
+            console.log("Auth: Unsubscribing from auth state changes.");
+            subscription.unsubscribe();
+        };
     }, []);
 
     const login = async (email: string, password: string) => {
-        // Step 1: Sign in the user
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
         if (signInError) {
-            // FIX: Provide a more user-friendly error message for invalid credentials.
+             // Add specific handling for email not confirmed
+            if (signInError.message.toLowerCase().includes('email not confirmed')) {
+                return { error: { message: "Please check your inbox and confirm your email address before logging in." } };
+            }
             if (signInError.message === 'Invalid login credentials') {
                 return { error: { message: "Invalid email or password. Please try again or register for a new account." } };
             }
@@ -104,35 +121,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
              return { error: { message: "Login failed, please try again." } };
         }
 
-        // Step 2: Immediately try to fetch the user's profile to ensure it's accessible.
-        // This is a critical check for RLS policies.
         const { data: profileData, error: profileError } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', data.user.id)
             .single();
 
-        // Step 3: If profile is not found or there's an error, something is wrong.
-        // This could be an RLS issue or a missing profile. Sign out and show an error.
         if (profileError) {
-            await supabase.auth.signOut(); // Important: don't leave the user in a half-logged-in state.
+            await supabase.auth.signOut();
             console.error('Error fetching profile after login:', profileError);
             return { error: { message: "Login successful, but could not retrieve your profile. Please ensure database security policies are active or contact support." } };
         }
 
-        // Step 4: Check if the fetched profile shows the account is locked.
         if (profileData.is_locked) {
             await supabase.auth.signOut();
             return { error: { message: "This account has been locked by an administrator." } };
         }
 
-        // Step 5: Success. onAuthStateChange will now handle setting the user state.
         return { error: null };
     };
 
     const register = async (name: string, email: string, password: string) => {
-        // We only call signUp. The database trigger will handle profile creation.
-        // We pass the user's full name in the `data` field so the trigger can use it.
         const { data, error } = await supabase.auth.signUp({ 
             email, 
             password,
@@ -142,9 +151,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 }
             }
         });
-
-        // The profile creation logic is now removed from here.
-        // If there's an error during signUp, we just return it.
         return { error };
     };
 
