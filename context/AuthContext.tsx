@@ -60,66 +60,40 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [sessionLoading, setSessionLoading] = useState(true);
 
     useEffect(() => {
-        console.log("Auth: Starting up auth provider.");
+        console.log("Auth: Setting up unified auth state listener.");
+        // Set loading to true initially. It will be set to false after the first auth event is received.
+        setSessionLoading(true);
 
-        const checkInitialSession = async () => {
-            setSessionLoading(true);
-            try {
-                console.log("Auth: Performing initial getSession() check.");
-                const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
-
-                if (sessionError) throw sessionError;
-
-                if (initialSession?.user) {
-                    console.log("Auth: Active initial session found. Fetching user profile.");
-                    const userProfile = await fetchUserProfile(initialSession.user);
-                    if (userProfile && !userProfile.is_locked) {
-                        setUser(userProfile);
-                        setSession(initialSession);
-                        console.log("Auth: Initial session and profile loaded successfully.");
-                    } else {
-                         console.log("Auth: Initial session found, but profile fetch failed or user is locked. Clearing session locally.");
-                         setUser(null);
-                         setSession(null);
-                    }
-                } else {
-                    console.log("Auth: No initial session found.");
-                    setUser(null);
-                    setSession(null);
-                }
-            } catch (error) {
-                console.error("Auth: Critical error during initial session check:", error);
-                setUser(null);
-                setSession(null);
-            } finally {
-                // CRITICAL: This guarantees the loading state is always turned off and unlocks the UI.
-                setSessionLoading(false);
-                console.log("Auth: Initial session check finished. UI is now unlocked.");
-            }
-        };
-
-        checkInitialSession();
-
-        // Set up the listener for all subsequent auth events (e.g., explicit sign-in/out).
+        // The onAuthStateChange listener is the single source of truth.
+        // It fires an INITIAL_SESSION event on page load, and subsequent events for SIGNED_IN, SIGNED_OUT, etc.
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-            console.log(`Auth: Auth state changed. Event: ${event}`);
-            if (event === 'SIGNED_IN' && newSession?.user) {
+            console.log(`Auth: Auth state change detected. Event: ${event}, Session: ${newSession ? 'Exists' : 'Null'}`);
+
+            if (newSession?.user) {
+                // This handles SIGNED_IN, TOKEN_REFRESHED, and INITIAL_SESSION with a user.
                 const userProfile = await fetchUserProfile(newSession.user);
                 if (userProfile && !userProfile.is_locked) {
                     setUser(userProfile);
                     setSession(newSession);
                 } else {
-                    // If sign-in event occurs but profile is missing/locked, force sign-out to prevent inconsistent state.
+                    // If profile is missing or user is locked, force a clean state by signing out.
+                    // This prevents the user from being stuck in a valid session without a valid profile.
+                    console.log("Auth: Profile not found or user locked. Forcing sign-out.");
                     await supabase.auth.signOut();
                     setUser(null);
                     setSession(null);
                 }
-            } else if (event === 'SIGNED_OUT') {
+            } else {
+                // This handles SIGNED_OUT and INITIAL_SESSION without a user.
                 setUser(null);
                 setSession(null);
             }
+
+            // CRITICAL: Once the first event is processed, loading is complete, which unlocks the UI.
+            setSessionLoading(false);
+            console.log("Auth: Auth event processed. UI is now unlocked.");
         });
-    
+
         return () => {
             console.log("Auth: Unsubscribing from auth state changes.");
             subscription.unsubscribe();
@@ -128,7 +102,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const login = async (email: string, password: string) => {
         try {
-            const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+            const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
             if (signInError) {
                 console.error("Auth: Login failed at signInWithPassword.", signInError.message);
@@ -139,27 +113,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     return { error: { message: "The email or password you entered is incorrect. Please double-check your credentials and try again." } };
                 }
                 return { error: signInError };
-            } 
-            
-            if (!data.user) {
-                 return { error: { message: "Login failed, please try again." } };
             }
             
-            const userProfile = await fetchUserProfile(data.user);
-
-            if (!userProfile) {
-                await supabase.auth.signOut(); 
-                console.error('Auth: Login successful, but could not retrieve user profile. Forcing logout.');
-                return { error: { message: "Login successful, but we couldn't load your profile. Please contact support. (This may be due to database security policies)." } };
-            }
-
-            if (userProfile.is_locked) {
-                await supabase.auth.signOut();
-                return { error: { message: "This account has been locked by an administrator." } };
-            }
-
-            setUser(userProfile);
-            setSession(data.session);
+            // On success, we don't set the state here. We let the onAuthStateChange listener handle it.
             return { error: null };
         } catch (e: any) {
             console.error("Auth: A critical, unexpected error occurred during the signIn process.", e);
@@ -169,7 +125,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const register = async (name: string, email: string, password: string) => {
         try {
-            const { data, error } = await supabase.auth.signUp({ 
+            const { error } = await supabase.auth.signUp({ 
                 email, 
                 password,
                 options: {
@@ -184,9 +140,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 }
                 return { error };
             }
-            if (data.user && data.user.identities && data.user.identities.length === 0) {
-                return { error: { message: "This email address is already in use. Please try logging in." } };
-            }
 
             return { error: null };
         } catch (e: any) {
@@ -196,9 +149,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     const logout = async () => {
-        await supabase.auth.signOut();
-        setUser(null);
-        setSession(null);
+        console.log("Auth: Attempting to log out.");
+        try {
+            const { error } = await supabase.auth.signOut();
+            if (error) {
+                console.error("Auth: Error during Supabase sign out:", error);
+                // As a fallback, clear the local state manually if the server call fails.
+                setUser(null);
+                setSession(null);
+            }
+            // If successful, the onAuthStateChange listener will handle setting user/session to null.
+        } catch (e) {
+            console.error("Auth: Critical error during logout process:", e);
+            // As a failsafe, also clear the local state.
+            setUser(null);
+            setSession(null);
+        }
     };
     
     const value = {

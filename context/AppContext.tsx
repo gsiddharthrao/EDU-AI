@@ -10,6 +10,7 @@ import { useAuth } from './AuthContext';
 interface AppContextType {
     isGeneratingPath: boolean;
     learningPath: LearningPath | null;
+    pathError: string | null;
     leaderboard: LeaderboardEntry[];
     isLeaderboardLoading: boolean;
     generateLearningPath: (profile: UserProfile) => Promise<void>;
@@ -35,6 +36,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const [isGeneratingPath, setIsGeneratingPath] = useState(false);
     const [learningPath, setLearningPath] = useState<LearningPath | null>(null);
+    const [pathError, setPathError] = useState<string | null>(null);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || 'light');
@@ -177,6 +179,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const generateLearningPath = async (profile: UserProfile) => {
         setIsGeneratingPath(true);
         setLearningPath(null);
+        setPathError(null);
         try {
             const profileHash = await generateProfileHash(profile);
 
@@ -210,7 +213,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
         } catch (error) {
             console.error("Failed to generate or fetch learning path", error);
-            throw error; // Propagate error
+            setPathError("We couldn't generate your learning path. The AI service may be busy, or there might be a network issue. Please try again in a moment.");
         } finally {
             setIsGeneratingPath(false);
         }
@@ -282,7 +285,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const value: AppContextType = {
-        learningPath, leaderboard, isGeneratingPath, isLeaderboardLoading,
+        learningPath, leaderboard, isGeneratingPath, isLeaderboardLoading, pathError,
         generateLearningPath, updateUserProfile, completeLesson, awardPointsAndBadge,
         streamChatbotResponse,
         theme, toggleTheme,

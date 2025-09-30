@@ -13,6 +13,7 @@ const StudentDashboard: React.FC = () => {
     const { user } = useAuth();
     const {
         learningPath,
+        pathError,
         leaderboard,
         isLeaderboardLoading,
         isGeneratingPath,
@@ -31,10 +32,10 @@ const StudentDashboard: React.FC = () => {
     const userProfileExists = user?.profile?.career_aspirations && user.profile.skills.length > 0;
     
     useEffect(() => {
-        if (userProfileExists && !learningPath && !isGeneratingPath && user) {
+        if (userProfileExists && !learningPath && !isGeneratingPath && user && !pathError) {
             generateLearningPath(user.profile);
         }
-    }, [userProfileExists, learningPath, isGeneratingPath, generateLearningPath, user]);
+    }, [userProfileExists, learningPath, isGeneratingPath, generateLearningPath, user, pathError]);
 
     const handleSaveProfile = async (newProfile: UserProfile) => {
         setIsSavingProfile(true);
@@ -94,6 +95,21 @@ const StudentDashboard: React.FC = () => {
                 <div className="text-center p-12 bg-white dark:bg-neutral-light/20 rounded-lg shadow-lg">
                     <h2 className="text-2xl font-semibold text-primary mb-4 animate-pulse">Generating Your Personal Learning Path...</h2>
                     <p className="text-content-light dark:text-content-dark">Our AI is crafting the perfect journey for you. This might take a moment.</p>
+                </div>
+            );
+        }
+
+        if (pathError) {
+            return (
+                <div className="text-center p-8 bg-red-100 dark:bg-red-900/30 rounded-lg shadow-lg animate-fade-in border border-red-400">
+                    <h2 className="text-2xl font-semibold mb-2 text-red-700 dark:text-red-300">Error Generating Path</h2>
+                    <p className="mb-6 text-red-600 dark:text-red-200">{pathError}</p>
+                    <button
+                        onClick={() => setIsEditingProfile(true)}
+                        className="px-4 py-2 bg-secondary text-white font-semibold rounded-lg hover:bg-green-600 transition-colors"
+                    >
+                        Update Profile & Retry
+                    </button>
                 </div>
             );
         }
