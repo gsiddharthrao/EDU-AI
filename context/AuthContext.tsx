@@ -71,26 +71,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setSessionLoading(true);
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             if (session?.user) {
-                const profile = await fetchUserProfile(session.user);
-                
-                if (profile) {
-                    // This is a valid session with a valid profile.
-                    setAuthError(null);
+                let profile = await fetchUserProfile(session.user);
 
-                    if (profile.is_locked) {
-                        setAuthError("Your account has been locked. Please contact an administrator.");
-                        await supabase.auth.signOut(); // This will re-trigger onAuthStateChange with a null session
-                    } else {
-                        setUser(profile);
-                        setSession(session);
-                    }
-                } else {
-                    // CRITICAL: Authenticated user with no profile. The session is stale/invalid.
-                    // Sign out immediately to destroy the bad session. The listener will be
-                    // re-triggered with a null session, which will clean up the app state.
-                    console.warn("Auth: Stale session detected (user exists but profile is missing). Forcing sign-out.");
-                    await supabase.auth.signOut();
+                // If the profile doesn't exist (e.g., for a brand new user whose profile creation trigger hasn't run yet),
+                // create a default user object in memory. This prevents an immediate logout and allows the user
+                // to be directed to the dashboard to complete their profile.
+                if (!profile) {
+                    console.warn("Auth: Profile not found for authenticated user. Using a default local profile.");
+                    profile = {
+                        id: session.user.id,
+                        email: session.user.email!,
+                        name: session.user.user_metadata?.name || session.user.email!.split('@')[0] || 'New User',
+                        role: 'student', // Default new users to student role
+                        points: 0,
+                        badges: [],
+                        completed_lessons: [],
+                        is_locked: false,
+                        profile: {
+                            skills: [],
+                            career_aspirations: '',
+                        },
+                    };
                 }
+                
+                if (profile.is_locked) {
+                    setAuthError("Your account has been locked. Please contact an administrator.");
+                    await supabase.auth.signOut(); // This will re-trigger onAuthStateChange with a null session
+                } else {
+                    setUser(profile);
+                    setSession(session);
+                    setAuthError(null);
+                }
+
             } else {
                 // No session, user is logged out. This is a valid, clean state.
                 setUser(null);
